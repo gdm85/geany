@@ -82,6 +82,9 @@
 
 #include <gdk/gdkkeysyms.h>
 
+/* Note: use sciwrappers.h instead where possible.
+ * Do not use SSM in files unrelated to scintilla. */
+#define SSM(s, m, w, l) scintilla_send_message(s, m, w, l)
 
 #define USE_GIO_FILE_OPERATIONS (!file_prefs.use_safe_file_saving && file_prefs.use_gio_unsafe_file_saving)
 
@@ -2072,34 +2075,41 @@ static gboolean save_file_handle_infobars(GeanyDocument *doc, gboolean force)
 }
 
 static void apply_formatting_as_needed(GeanyDocument *doc) {
-	if (doc->file_type->id == GEANY_FILETYPES_GO) {
-		GString *output = g_string_new(NULL);
-		gchar *result = NULL;
-		GError *error = NULL;
-		SpawnWriteData input;
-		/* get current buffer */
-		input.ptr = sci_get_contents(doc->editor->sci, -1);
-		input.size = strlen(input.ptr);
-
-		gint exitStatus = -1;
-		if (spawn_sync(NULL, "gofmt -s", NULL, NULL, &input, output, NULL, &exitStatus, &error))
-		{
-			result = g_string_free(output, FALSE);
-			gint pos = sci_get_current_position(doc->editor->sci);
-			sci_set_text(doc->editor->sci, result);
-
-			// try to set back position where it was
-			set_cursor_position(doc->editor, pos);
-		}
-		else
-		{
-			result = g_string_free(output, FALSE);
-			g_warning(_("Cannot execute gofmt command: %s."), error->message);
-			g_error_free(error);
-		}
-
-		g_free(result);
+	if (doc->file_type->id != GEANY_FILETYPES_GO) {
+		return;
 	}
+
+	GString *output = g_string_new(NULL);
+	gchar *result = NULL;
+	GError *error = NULL;
+	SpawnWriteData input;
+	/* get current buffer */
+	input.ptr = sci_get_contents(doc->editor->sci, -1);
+	input.size = strlen(input.ptr);
+
+	gint exitStatus = -1;
+	if (spawn_sync(NULL, "gofmt -s", NULL, NULL, &input, output, NULL, &exitStatus, &error))
+	{
+		// get caret position and first visible line
+		gint line = sci_get_line_from_position(doc->editor->sci, sci_get_current_position(doc->editor->sci));
+		gint first = sci_get_first_visible_line(doc->editor->sci);
+
+		// set new formatted text
+		result = g_string_free(output, FALSE);
+		sci_set_text(doc->editor->sci, result);
+
+		// try to set back position at beginning of original line
+		sci_goto_line(doc->editor->sci, line, FALSE);
+		SSM(doc->editor->sci, SCI_SETFIRSTVISIBLELINE, first, 0);
+	}
+	else
+	{
+		result = g_string_free(output, FALSE);
+		g_warning(_("Cannot execute gofmt command: %s."), error->message);
+		g_error_free(error);
+	}
+
+	g_free(result);
 }
 
 /**
