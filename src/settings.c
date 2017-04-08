@@ -317,7 +317,7 @@ static GSettings *settings_create(void)
 	g_settings_schema_source_unref(source);
 	if (schema == NULL)
 	{
-		g_error("unable to locate schema in '" GEANY_SETTINGS_SCHEMA_DIR "'");
+		g_error("unable to locate schema '" SETTINGS_SCHEMA_ID "' in '" GEANY_SETTINGS_SCHEMA_DIR "'");
 		return NULL;
 	}
 
