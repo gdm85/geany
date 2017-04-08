@@ -32,6 +32,7 @@
 
 #include "app.h"
 #include "callbacks.h" /* for ignore_callback */
+#include "spawn.h"
 #include "dialogs.h"
 #include "documentprivate.h"
 #include "encodings.h"
@@ -2070,6 +2071,36 @@ static gboolean save_file_handle_infobars(GeanyDocument *doc, gboolean force)
 	return TRUE;
 }
 
+static void apply_formatting_as_needed(GeanyDocument *doc) {
+	if (doc->file_type->id == GEANY_FILETYPES_GO) {
+		GString *output = g_string_new(NULL);
+		gchar *result = NULL;
+		GError *error = NULL;
+		SpawnWriteData input;
+		/* get current buffer */
+		input.ptr = sci_get_contents(doc->editor->sci, -1);
+		input.size = strlen(input.ptr);
+
+		gint exitStatus = -1;
+		if (spawn_sync(NULL, "gofmt -s", NULL, NULL, &input, output, NULL, &exitStatus, &error))
+		{
+			result = g_string_free(output, FALSE);
+			gint pos = sci_get_current_position(doc->editor->sci);
+			sci_set_text(doc->editor->sci, result);
+
+			// try to set back position where it was
+			set_cursor_position(doc->editor, pos);
+		}
+		else
+		{
+			result = g_string_free(output, FALSE);
+			g_warning(_("Cannot execute gofmt command: %s."), error->message);
+			g_error_free(error);
+		}
+
+		g_free(result);
+	}
+}
 
 /**
  *  Saves the document.
@@ -2142,6 +2173,9 @@ gboolean document_save_file(GeanyDocument *doc, gboolean force)
 
 	/* notify plugins which may wish to modify the document before it's saved */
 	g_signal_emit_by_name(geany_object, "document-before-save", doc);
+	
+	// HACK: apply formatting on the fly
+	apply_formatting_as_needed(doc);
 
 	len = sci_get_length(doc->editor->sci) + 1;
 	if (doc->has_bom && encodings_is_unicode_charset(doc->encoding))
